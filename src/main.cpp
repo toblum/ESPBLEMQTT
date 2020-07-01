@@ -8,7 +8,12 @@
  * of the MPL license. See the LICENSE file for details.
  */
 
+#include <Arduino.h>
 #include <IotWebConf.h>
+
+#include <NimBLEDevice.h>
+#include <NimBLEAdvertisedDevice.h>
+#include "BLEAdvertisedDeviceCallbacks.h"
 
 // -- Initial name of the Thing. Used e.g. as SSID of the own Access Point.
 const char thingName[] = "ESPBLEMQTT";
@@ -45,6 +50,13 @@ IotWebConfParameter param1 = IotWebConfParameter("MQTT hostname", "mqttHostname"
 IotWebConfParameter param2 = IotWebConfParameter("MQTT username", "mqttUsername", mqttUsername, STRING_LEN);
 IotWebConfParameter param3 = IotWebConfParameter("MQTT password", "mqttPassword", mqttPassword, STRING_LEN);
 IotWebConfParameter param4 = IotWebConfParameter("MQTT port", "mqttPort", mqttPort, NUMBER_LEN, "number", "1833", "1..65535", "min='1' max='65535' step='1'");
+
+// BLE
+BLEScan *pBLEScan;
+int scanTime = 5; //In seconds
+
+// Generic
+unsigned long nextBLEScan = millis();
 
 /**
  * Handle web requests to "/" path.
@@ -120,6 +132,14 @@ void setup()
 	server.on("/config", [] { iotWebConf.handleConfig(); });
 	server.onNotFound([]() { iotWebConf.handleNotFound(); });
 
+	// BLE scanner
+	BLEDevice::init("");
+	pBLEScan = BLEDevice::getScan(); //create new scan
+	// pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());
+	pBLEScan->setActiveScan(true); //active scan uses more power, but get results faster
+	pBLEScan->setInterval(100);
+	pBLEScan->setWindow(99); // less or equal setInterval value
+
 	Serial.println("Ready.");
 }
 
@@ -127,4 +147,64 @@ void loop()
 {
 	// -- doLoop should be called as frequently as possible.
 	iotWebConf.doLoop();
+
+	if (iotWebConf.getState() == IOTWEBCONF_STATE_ONLINE)
+	{
+		unsigned long now = millis();
+
+		if (nextBLEScan < now)
+		{
+			Serial.println("Start BLE scan!");
+			BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
+			Serial.print("Devices found: ");
+			Serial.println(foundDevices.getCount());
+			Serial.println("BLE scan done!");
+
+
+
+			int count = foundDevices.getCount();
+			for (int i = 0; i < count; i++)
+			{
+				BLEAdvertisedDevice d = foundDevices.getDevice(i);
+				Serial.println(d.getAddress().toString().c_str());
+				Serial.println(d.getRSSI());
+
+				if (d.haveName())
+				{
+					Serial.println(d.getName().c_str());
+				}
+
+				if (d.haveAppearance())
+				{
+					Serial.println(d.getAppearance());
+				}
+
+				if (d.haveManufacturerData())
+				{
+					//   std::string md = d.getManufacturerData();
+					//   uint8_t *mdp = (uint8_t *)d.getManufacturerData().data();
+					//   char *pHex = BLEUtils::buildHexData(nullptr, mdp, md.length());
+					//   ss << ",\"ManufacturerData\":\"" << pHex << "\"";
+					//   free(pHex);
+				}
+
+				if (d.haveServiceUUID())
+				{
+					Serial.println(d.getServiceUUID().toString().c_str());
+				}
+
+				if (d.haveTXPower())
+				{
+					Serial.println((int)d.getTXPower());
+				}
+				Serial.println("===========================================");
+			}
+
+
+
+			pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
+
+			nextBLEScan = millis() + 15000;
+		}
+	}
 }
