@@ -163,12 +163,9 @@ void loop()
 			Serial.println(foundDevices.getCount());
 			Serial.println("BLE scan done!");
 
-			JsonArray array = doc.to<JsonArray>();
-
 			int count = foundDevices.getCount();
 			for (int i = 0; i < count; i++)
 			{
-				// JsonObject object = doc.to<JsonObject>();
 				JsonObject object = doc.createNestedObject();
 
 				BLEAdvertisedDevice d = foundDevices.getDevice(i);
