@@ -11,6 +11,8 @@
 #include <Arduino.h>
 #include <IotWebConf.h>
 
+#include <ArduinoJson.h>
+
 #include <NimBLEDevice.h>
 #include <NimBLEAdvertisedDevice.h>
 #include "BLEAdvertisedDeviceCallbacks.h"
@@ -57,6 +59,7 @@ int scanTime = 5; //In seconds
 
 // Generic
 unsigned long nextBLEScan = millis();
+DynamicJsonDocument doc(4096);
 
 /**
  * Handle web requests to "/" path.
@@ -160,47 +163,56 @@ void loop()
 			Serial.println(foundDevices.getCount());
 			Serial.println("BLE scan done!");
 
-
+			JsonArray array = doc.to<JsonArray>();
 
 			int count = foundDevices.getCount();
 			for (int i = 0; i < count; i++)
 			{
+				// JsonObject object = doc.to<JsonObject>();
+				JsonObject object = doc.createNestedObject();
+
 				BLEAdvertisedDevice d = foundDevices.getDevice(i);
 				Serial.println(d.getAddress().toString().c_str());
 				Serial.println(d.getRSSI());
+				object["address"] = d.getAddress().toString();
+				object["rssi"] = d.getRSSI();
 
 				if (d.haveName())
 				{
 					Serial.println(d.getName().c_str());
+					object["name"] = d.getName();
 				}
 
 				if (d.haveAppearance())
 				{
 					Serial.println(d.getAppearance());
+					object["appearance"] = d.getAppearance();
 				}
 
 				if (d.haveManufacturerData())
 				{
-					//   std::string md = d.getManufacturerData();
-					//   uint8_t *mdp = (uint8_t *)d.getManufacturerData().data();
-					//   char *pHex = BLEUtils::buildHexData(nullptr, mdp, md.length());
-					//   ss << ",\"ManufacturerData\":\"" << pHex << "\"";
-					//   free(pHex);
+					std::string md = d.getManufacturerData();
+					uint8_t *mdp = (uint8_t *)d.getManufacturerData().data();
+					char *pHex = BLEUtils::buildHexData(nullptr, mdp, md.length());
+					object["manufacturer"] = pHex;
+					free(pHex);
 				}
 
 				if (d.haveServiceUUID())
 				{
 					Serial.println(d.getServiceUUID().toString().c_str());
+					object["service_uuid"] = d.getServiceUUID().toString();
 				}
 
 				if (d.haveTXPower())
 				{
 					Serial.println((int)d.getTXPower());
+					object["tx_power"] = (int)d.getTXPower();
 				}
+
+				serializeJsonPretty(doc, Serial);
 				Serial.println("===========================================");
 			}
-
-
 
 			pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
 
