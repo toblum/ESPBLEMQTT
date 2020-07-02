@@ -9,6 +9,7 @@
  */
 
 #include <Arduino.h>
+#include <MQTT.h>
 #include <IotWebConf.h>
 
 #include <ArduinoJson.h>
@@ -25,6 +26,7 @@ const char wifiInitialApPassword[] = "configureme";
 
 #define STRING_LEN 128
 #define NUMBER_LEN 5
+#define RESULT_LEN 4096
 
 // -- Configuration specific key. The value should be modified if config structure was changed.
 #define CONFIG_VERSION "EBM_001"
@@ -59,7 +61,15 @@ int scanTime = 5; //In seconds
 
 // Generic
 unsigned long nextBLEScan = millis();
-DynamicJsonDocument doc(4096);
+DynamicJsonDocument doc(RESULT_LEN);
+
+// MQTT
+void mqttMessageReceived(String &topic, String &payload);
+WiFiClient net;
+MQTTClient mqttClient(RESULT_LEN);
+boolean needMqttConnect = false;
+unsigned long lastMqttConnectionAttempt = 0;
+
 
 /**
  * Handle web requests to "/" path.
@@ -96,6 +106,49 @@ void configSaved()
 	Serial.println("Configuration was updated.");
 }
 
+boolean connectMqttOptions()
+{
+	boolean result;
+	if (mqttPassword[0] != '\0')
+	{
+		result = mqttClient.connect(iotWebConf.getThingName(), mqttUsername, mqttPassword);
+	}
+	else if (mqttUsername[0] != '\0')
+	{
+		result = mqttClient.connect(iotWebConf.getThingName(), mqttUsername);
+	}
+	else
+	{
+		result = mqttClient.connect(iotWebConf.getThingName());
+	}
+	return result;
+}
+
+boolean connectMqtt()
+{
+	unsigned long now = millis();
+	if (1000 > now - lastMqttConnectionAttempt)
+	{
+		// Do not repeat within 1 sec.
+		return false;
+	}
+	Serial.println("Connecting to MQTT server...");
+	if (!connectMqttOptions())
+	{
+		lastMqttConnectionAttempt = now;
+		return false;
+	}
+	Serial.println("Connected!");
+
+	// mqttClient.subscribe("/test/action");
+	return true;
+}
+
+void mqttMessageReceived(String &topic, String &payload)
+{
+	Serial.println("Incoming: " + topic + " - " + payload);
+}
+
 boolean formValidator()
 {
 	Serial.println("Validating form.");
@@ -128,12 +181,22 @@ void setup()
 	iotWebConf.getApTimeoutParameter()->visible = true;
 
 	// -- Initializing the configuration.
-	iotWebConf.init();
+	boolean validConfig = iotWebConf.init();
+	if (!validConfig)
+	{
+		mqttHostname[0] = '\0';
+		mqttUsername[0] = '\0';
+		mqttPassword[0] = '\0';
+	}
 
 	// -- Set up required URL handlers on the web server.
 	server.on("/", handleRoot);
 	server.on("/config", [] { iotWebConf.handleConfig(); });
 	server.onNotFound([]() { iotWebConf.handleNotFound(); });
+
+	// MQTT
+	mqttClient.begin(mqttHostname, net);
+	mqttClient.onMessage(mqttMessageReceived);
 
 	// BLE scanner
 	BLEDevice::init("");
@@ -151,6 +214,23 @@ void loop()
 	// -- doLoop should be called as frequently as possible.
 	iotWebConf.doLoop();
 
+	// MQTT
+	mqttClient.loop();
+
+	if (needMqttConnect)
+	{
+		if (connectMqtt())
+		{
+			needMqttConnect = false;
+		}
+	}
+	else if ((iotWebConf.getState() == IOTWEBCONF_STATE_ONLINE) && (!mqttClient.connected()))
+	{
+		Serial.println("MQTT reconnect");
+		connectMqtt();
+	}
+
+	// BLE scan
 	if (iotWebConf.getState() == IOTWEBCONF_STATE_ONLINE)
 	{
 		unsigned long now = millis();
@@ -208,6 +288,10 @@ void loop()
 				}
 
 				serializeJsonPretty(doc, Serial);
+
+				char output[RESULT_LEN];
+				serializeJson(doc, output);
+				mqttClient.publish("test", output);
 				Serial.println("===========================================");
 			}
 
