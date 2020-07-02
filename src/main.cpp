@@ -25,7 +25,7 @@ const char thingName[] = "ESPBLEMQTT";
 const char wifiInitialApPassword[] = "configureme";
 
 #define STRING_LEN 128
-#define NUMBER_LEN 5
+#define NUMBER_LEN 6
 #define RESULT_LEN 4096
 
 // -- Configuration specific key. The value should be modified if config structure was changed.
@@ -47,6 +47,9 @@ char mqttHostname[STRING_LEN];
 char mqttUsername[STRING_LEN];
 char mqttPassword[STRING_LEN];
 char mqttPort[NUMBER_LEN];
+char mqttTopic[STRING_LEN];
+char scanInterval[NUMBER_LEN];
+char scanTime[NUMBER_LEN];
 
 IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword, CONFIG_VERSION);
 IotWebConfSeparator separator1 = IotWebConfSeparator("MQTT");
@@ -54,10 +57,14 @@ IotWebConfParameter param1 = IotWebConfParameter("MQTT hostname", "mqttHostname"
 IotWebConfParameter param2 = IotWebConfParameter("MQTT username", "mqttUsername", mqttUsername, STRING_LEN);
 IotWebConfParameter param3 = IotWebConfParameter("MQTT password", "mqttPassword", mqttPassword, STRING_LEN);
 IotWebConfParameter param4 = IotWebConfParameter("MQTT port", "mqttPort", mqttPort, NUMBER_LEN, "number", "1833", "1..65535", "min='1' max='65535' step='1'");
+IotWebConfParameter param5 = IotWebConfParameter("MQTT topic", "mqttTopic", mqttTopic, STRING_LEN);
+IotWebConfSeparator separator2 = IotWebConfSeparator("General");
+IotWebConfParameter param6 = IotWebConfParameter("Scan interval (sec)", "scanInterval", scanInterval, NUMBER_LEN, "number", "60", "1..65535", "min='1' max='65535' step='1'");
+IotWebConfParameter param7 = IotWebConfParameter("Scan time (sec)", "scanTime", scanTime, NUMBER_LEN, "number", "5", "1..65535", "min='1' max='65535' step='1'");
 
 // BLE
 BLEScan *pBLEScan;
-int scanTime = 5; //In seconds
+// int scanTime = 5; //In seconds
 
 // Generic
 unsigned long nextBLEScan = millis();
@@ -93,6 +100,12 @@ void handleRoot()
 	s += mqttPassword;
 	s += "<li>MQTT port: ";
 	s += atoi(mqttPort);
+	s += "<li>MQTT topic: ";
+	s += mqttTopic;
+	s += "<li>Scan interval (sec): ";
+	s += atoi(scanInterval);
+	s += "<li>Scan time (sec): ";
+	s += atoi(scanTime);
 	s += "</ul><br>";
 	s += "Go to <a href='config'>configure page</a> to change values.<br>";
 	s += "GitHub: <a target='_blank' href='https://github.com/toblum/ESPBLEMQTT'>ESPBLEMQTT</a>";
@@ -176,6 +189,10 @@ void setup()
 	iotWebConf.addParameter(&param2);
 	iotWebConf.addParameter(&param3);
 	iotWebConf.addParameter(&param4);
+	iotWebConf.addParameter(&param5);
+	iotWebConf.addParameter(&separator2);
+	iotWebConf.addParameter(&param6);
+	iotWebConf.addParameter(&param7);
 	iotWebConf.setConfigSavedCallback(&configSaved);
 	iotWebConf.setFormValidator(&formValidator);
 	iotWebConf.getApTimeoutParameter()->visible = true;
@@ -187,6 +204,10 @@ void setup()
 		mqttHostname[0] = '\0';
 		mqttUsername[0] = '\0';
 		mqttPassword[0] = '\0';
+		mqttPort[0] = '\0';
+		mqttTopic[0] = '\0';
+		scanInterval[0] = '\0';
+		scanTime[0] = '\0';
 	}
 
 	// -- Set up required URL handlers on the web server.
@@ -238,7 +259,13 @@ void loop()
 		if (nextBLEScan < now)
 		{
 			Serial.println("Start BLE scan!");
-			BLEScanResults foundDevices = pBLEScan->start(scanTime, false);
+			// Serial.println(atoi(scanTime));
+			// Serial.println(atoi(scanInterval));
+			int BLEscanTime = atoi(scanTime);
+			if (BLEscanTime < 1) {
+				BLEscanTime = 5;
+			}
+			BLEScanResults foundDevices = pBLEScan->start(BLEscanTime, false);
 			Serial.print("Devices found: ");
 			Serial.println(foundDevices.getCount());
 			Serial.println("BLE scan done!");
@@ -249,20 +276,20 @@ void loop()
 				JsonObject object = doc.createNestedObject();
 
 				BLEAdvertisedDevice d = foundDevices.getDevice(i);
-				Serial.println(d.getAddress().toString().c_str());
-				Serial.println(d.getRSSI());
+				// Serial.println(d.getAddress().toString().c_str());
+				// Serial.println(d.getRSSI());
 				object["address"] = d.getAddress().toString();
 				object["rssi"] = d.getRSSI();
 
 				if (d.haveName())
 				{
-					Serial.println(d.getName().c_str());
+					// Serial.println(d.getName().c_str());
 					object["name"] = d.getName();
 				}
 
 				if (d.haveAppearance())
 				{
-					Serial.println(d.getAppearance());
+					// Serial.println(d.getAppearance());
 					object["appearance"] = d.getAppearance();
 				}
 
@@ -277,27 +304,39 @@ void loop()
 
 				if (d.haveServiceUUID())
 				{
-					Serial.println(d.getServiceUUID().toString().c_str());
+					// Serial.println(d.getServiceUUID().toString().c_str());
 					object["service_uuid"] = d.getServiceUUID().toString();
 				}
 
 				if (d.haveTXPower())
 				{
-					Serial.println((int)d.getTXPower());
+					// Serial.println((int)d.getTXPower());
 					object["tx_power"] = (int)d.getTXPower();
 				}
 
-				serializeJsonPretty(doc, Serial);
-
-				char output[RESULT_LEN];
-				serializeJson(doc, output);
-				mqttClient.publish("test", output);
-				Serial.println("===========================================");
+				// Serial.println("-------------------------------------------");
 			}
+
+			// serializeJsonPretty(doc, Serial);
+
+			char output[RESULT_LEN];
+			serializeJson(doc, output);
+			Serial.print("Payload size: ");
+			Serial.println(measureJson(doc));
+			
+			if (sizeof(mqttTopic) < 2) {
+				strcpy(mqttTopic, "espblemqtt");
+			}
+			mqttClient.publish(mqttTopic, output);
+			Serial.println("===========================================");
 
 			pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
 
-			nextBLEScan = millis() + 15000;
+			int BLEscanInterval = atoi(scanInterval);
+			if (BLEscanInterval < 1) {
+				BLEscanInterval = 60;
+			}
+			nextBLEScan = millis() + (BLEscanInterval * 1000);
 		}
 	}
 }
