@@ -153,13 +153,22 @@ boolean connectMqtt()
 	}
 	Serial.println("Connected!");
 
-	// mqttClient.subscribe("/test/action");
+	char subscribeTopic[STRING_LEN];
+	strcpy(subscribeTopic, mqttTopic);
+	strcat(subscribeTopic, "/cmd");
+	Serial.print("Subscribed: ");
+	Serial.println(subscribeTopic);
+
+	mqttClient.subscribe(subscribeTopic);
 	return true;
 }
 
 void mqttMessageReceived(String &topic, String &payload)
 {
 	Serial.println("Incoming: " + topic + " - " + payload);
+	if (payload.equals("scan")) {
+		nextBLEScan = millis();
+	}
 }
 
 boolean formValidator()
@@ -230,6 +239,10 @@ void setup()
 	// If automatic scanning is enabled, schedule first scan
 	if (atoi(scanInterval) > 0) {
 		nextBLEScan = millis();
+	}
+
+	if (sizeof(mqttTopic) < 2) {
+		strcpy(mqttTopic, "espblemqtt");
 	}
 
 	Serial.println("Ready.");
@@ -332,10 +345,12 @@ void loop()
 			Serial.print("Payload size: ");
 			Serial.println(measureJson(doc));
 			
-			if (sizeof(mqttTopic) < 2) {
-				strcpy(mqttTopic, "espblemqtt");
-			}
-			mqttClient.publish(mqttTopic, output);
+			char publishTopic[STRING_LEN];
+			strcpy(publishTopic, mqttTopic);
+			strcat(publishTopic, "/data");
+			Serial.print("Published to: ");
+			Serial.println(publishTopic);
+			mqttClient.publish(publishTopic, output);
 			Serial.println("===========================================");
 
 			pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
