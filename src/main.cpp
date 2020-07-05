@@ -59,7 +59,7 @@ IotWebConfParameter param3 = IotWebConfParameter("MQTT password", "mqttPassword"
 IotWebConfParameter param4 = IotWebConfParameter("MQTT port", "mqttPort", mqttPort, NUMBER_LEN, "number", "1833", "1..65535", "min='1' max='65535' step='1'");
 IotWebConfParameter param5 = IotWebConfParameter("MQTT topic", "mqttTopic", mqttTopic, STRING_LEN);
 IotWebConfSeparator separator2 = IotWebConfSeparator("General");
-IotWebConfParameter param6 = IotWebConfParameter("Scan interval (sec)", "scanInterval", scanInterval, NUMBER_LEN, "number", "60", "1..65535", "min='1' max='65535' step='1'");
+IotWebConfParameter param6 = IotWebConfParameter("Scan interval (sec)", "scanInterval", scanInterval, NUMBER_LEN, "number", "60", "0..65535", "min='0' max='65535' step='1'");
 IotWebConfParameter param7 = IotWebConfParameter("Scan time (sec)", "scanTime", scanTime, NUMBER_LEN, "number", "5", "1..65535", "min='1' max='65535' step='1'");
 
 // BLE
@@ -67,7 +67,7 @@ BLEScan *pBLEScan;
 // int scanTime = 5; //In seconds
 
 // Generic
-unsigned long nextBLEScan = millis();
+unsigned long nextBLEScan = 0;
 DynamicJsonDocument doc(RESULT_LEN);
 
 // MQTT
@@ -227,6 +227,11 @@ void setup()
 	pBLEScan->setInterval(100);
 	pBLEScan->setWindow(99); // less or equal setInterval value
 
+	// If automatic scanning is enabled, schedule first scan
+	if (atoi(scanInterval) > 0) {
+		nextBLEScan = millis();
+	}
+
 	Serial.println("Ready.");
 }
 
@@ -256,7 +261,8 @@ void loop()
 	{
 		unsigned long now = millis();
 
-		if (nextBLEScan < now)
+		// nextBLEScan == 0 means no automatic scanning
+		if (nextBLEScan < now && nextBLEScan > 0)
 		{
 			Serial.println("Start BLE scan!");
 			// Serial.println(atoi(scanTime));
@@ -335,10 +341,13 @@ void loop()
 			pBLEScan->clearResults(); // delete results fromBLEScan buffer to release memory
 
 			int BLEscanInterval = atoi(scanInterval);
-			if (BLEscanInterval < 1) {
-				BLEscanInterval = 60;
+
+			// If scan interval is less then 1, do not scan automatically.
+			if (BLEscanInterval > 0) {
+				nextBLEScan = millis() + (BLEscanInterval * 1000);
+			} else {
+				nextBLEScan = 0;
 			}
-			nextBLEScan = millis() + (BLEscanInterval * 1000);
 		}
 	}
 }
