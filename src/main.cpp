@@ -270,6 +270,8 @@ void loop()
 			Serial.println(foundDevices.getCount());
 			Serial.println("BLE scan done!");
 
+			doc.clear();
+
 			int count = foundDevices.getCount();
 			for (int i = 0; i < count; i++)
 			{
